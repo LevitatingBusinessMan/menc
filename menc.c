@@ -1,9 +1,17 @@
 #include <portaudio.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
 #define SAMPLE_RATE 44100
+#define PAYLOAD "this is a secret message"
+#define WPM 15 // Assuming "PARIS"
+#define DIT_LENGTH 1.0f/(WPM*50.0f/60.0f) * 1000
+#define DAH_LENGTH 3 * DIT_LENGTH
+#define MAX_TAPE_SIZE 4096
 
 float wave = 0.0f;
 
+bool state = false;
 int paCallback(const void* input, float* output,
 	unsigned long frame_count,
 	const PaStreamCallbackTimeInfo* time_info,
@@ -23,31 +31,146 @@ int paCallback(const void* input, float* output,
 	return 0;
 }
 
+const char* MORSE_SPACE = "       ";
+const char* MORSE_GAP = "   ";
+
+// 0-9, a-z
+const char* MORSE_DICT[] = {
+	"-----",
+	".----",
+	"..---",
+	"...--",
+	"....-",
+	".....",
+	"-....",
+	"--...",
+	"---..",
+	"----.",
+	".-",
+	"-...",
+	"-.-.",
+	"-..",
+	".",
+	"..-.",
+	"--.",
+	"....",
+	"..",
+	".---",
+	"-.-",
+	".-..",
+	"--",
+	"-.",
+	"---",
+	".--.",
+	"--.-",
+	".-.",
+	"...",
+	"-",
+	"..-",
+	"...-",
+	".--",
+	"-..-",
+	"-.--",
+	"--..",
+};
+
 int main(int argc, char* argv) {
 	PaStream* stream;
 	PaError err;
+
+	char tape[MAX_TAPE_SIZE] = {0};
+	int tape_index = 0;
+
+	// Build the tape
+	for (int i=0; i < strlen(PAYLOAD); i++) {
+		char c = PAYLOAD[i];
+		// numbers or lowercase characters or space
+		if (c >= 48 && c <= 57 || c >= 97 && c <= 122 || c == 32) {
+
+			if (c == 32) {
+				strcpy(tape + tape_index, MORSE_SPACE);
+				tape_index += strlen(MORSE_SPACE);
+				continue;
+			}
+
+			char* signal;
+
+			if (c >= 48 && c <= 57) {
+				signal = MORSE_DICT[c-48];
+			}
+
+			if (c >= 97 && c <= 122) {
+				signal = MORSE_DICT[c-87];
+			}
+
+			strcpy(tape + tape_index, signal);
+			tape_index += strlen(signal);
+			strcpy(tape + tape_index, MORSE_GAP);
+			tape_index += strlen(MORSE_GAP);
+		} else {
+			fprintf(stderr, "Illegal char %c in payload", c);
+			exit(1);
+		}
+	}
+
+	printf("Encoded payload:\n%s\n", tape);
 
 	err = Pa_Initialize();
 	if (err != paNoError) {
 		
 	}
 
-	err = Pa_OpenDefaultStream(&stream, 0, 1, paFloat32, SAMPLE_RATE, 256, paCallback, &wave);
-	if( err != paNoError ) goto error;
+	err = Pa_OpenDefaultStream(&stream, 0, 1, paFloat32, SAMPLE_RATE, 256, (PaStreamCallback*) paCallback, &wave);
+	if (err != paNoError) goto error;
 
-	err = Pa_StartStream(stream);
-	if( err != paNoError ) goto error;
+	int dit_length = DIT_LENGTH;
 
-	Pa_Sleep(1000);
+	bool state = false;
+	for (int i=0; i < MAX_TAPE_SIZE; i++) {
+		char c = tape[i];
+		switch(c) {
+			case '-':
+				if (!state) {
+					err = Pa_StartStream(stream);
+					if (err != paNoError) goto error;
+					state = true;
+				}
+				Pa_Sleep(DAH_LENGTH);
+				break;
+			case '.':
+				if (!state) {
+					err = Pa_StartStream(stream);
+					if (err != paNoError) goto error;
+					state = true;
+				}
+				Pa_Sleep(DIT_LENGTH);
+				break;
+			case ' ':
+				if (state) {
+					err = Pa_StopStream(stream);
+					if (err != paNoError) goto error;
+					state = false;
+				}
+				Pa_Sleep(DIT_LENGTH);
+				break;
+		}
+
+		if (c != ' ') {
+			err = Pa_StopStream(stream);
+			if (err != paNoError) goto error;
+			state = false;
+			Pa_Sleep(DIT_LENGTH);
+		}
+	}
 
 	err = Pa_StopStream(stream);
-	if( err != paNoError ) goto error;
+	if (err != paNoError) goto error;
 
 	err = Pa_CloseStream(stream);
-	if( err != paNoError ) goto error;
+	if (err != paNoError) goto error;
 
 	err = Pa_Terminate();
-	if( err != paNoError ) goto error;
+	if (err != paNoError) goto error;
 
 	return 0;
 

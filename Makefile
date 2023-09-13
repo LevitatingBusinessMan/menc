@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-lportaudio 
+CFLAGS=-g -lportaudio
 
 ifeq ($(PREFIX),)
     PREFIX := /usr/local
