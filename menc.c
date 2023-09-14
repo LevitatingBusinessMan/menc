@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #define SAMPLE_RATE 44100
 #define PAYLOAD "this is a secret message"
-#define WPM 15 // Assuming "PARIS"
+#define WPM 10 // Assuming "PARIS"
 #define DIT_LENGTH 1.0f/(WPM*50.0f/60.0f) * 1000
 #define DAH_LENGTH 3 * DIT_LENGTH
 #define MAX_TAPE_SIZE 4096
@@ -16,13 +16,11 @@ int paCallback(const void* input, float* output,
 	unsigned long frame_count,
 	const PaStreamCallbackTimeInfo* time_info,
 	PaStreamCallbackFlags statusFlags,
-	float* user_data) {
-
-	float wave = *user_data;
+	bool* state) {
 
 	for (int i=0; i < frame_count; i++) {
 		wave += 0.023f;
-		*(output++) = wave;
+		*(output++) = *state ? wave : 0;
 		if (wave >= 1.0f) {
 			wave -= 2.0f;
 		}
@@ -74,7 +72,7 @@ const char* MORSE_DICT[] = {
 	"--..",
 };
 
-int main(int argc, char* argv) {
+int main(int argc, char** argv) {
 	PaStream* stream;
 	PaError err;
 
@@ -120,44 +118,33 @@ int main(int argc, char* argv) {
 		
 	}
 
-	err = Pa_OpenDefaultStream(&stream, 0, 1, paFloat32, SAMPLE_RATE, 256, (PaStreamCallback*) paCallback, &wave);
+	bool state = false;
+	err = Pa_OpenDefaultStream(&stream, 0, 1, paFloat32, SAMPLE_RATE, 128, (PaStreamCallback*) paCallback, &state);
 	if (err != paNoError) goto error;
 
 	int dit_length = DIT_LENGTH;
 
-	bool state = false;
+	err = Pa_StartStream(stream);
+	if (err != paNoError) goto error;
+
 	for (int i=0; i < MAX_TAPE_SIZE; i++) {
 		char c = tape[i];
 		switch(c) {
 			case '-':
-				if (!state) {
-					err = Pa_StartStream(stream);
-					if (err != paNoError) goto error;
-					state = true;
-				}
+				state = true;
 				Pa_Sleep(DAH_LENGTH);
 				break;
 			case '.':
-				if (!state) {
-					err = Pa_StartStream(stream);
-					if (err != paNoError) goto error;
-					state = true;
-				}
+				state = true;
 				Pa_Sleep(DIT_LENGTH);
 				break;
 			case ' ':
-				if (state) {
-					err = Pa_StopStream(stream);
-					if (err != paNoError) goto error;
-					state = false;
-				}
+				state = false;
 				Pa_Sleep(DIT_LENGTH);
 				break;
 		}
 
 		if (c != ' ') {
-			err = Pa_StopStream(stream);
-			if (err != paNoError) goto error;
 			state = false;
 			Pa_Sleep(DIT_LENGTH);
 		}
