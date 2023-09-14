@@ -93,7 +93,7 @@ int main(int argc, char* argv) {
 				continue;
 			}
 
-			char* signal;
+			const char* signal;
 
 			if (c >= 48 && c <= 57) {
 				signal = MORSE_DICT[c-48];
@@ -109,7 +109,7 @@ int main(int argc, char* argv) {
 			tape_index += strlen(MORSE_GAP);
 		} else {
 			fprintf(stderr, "Illegal char %c in payload", c);
-			exit(1);
+			return 1;
 		}
 	}
 
@@ -177,4 +177,5 @@ int main(int argc, char* argv) {
 error:
 	Pa_Terminate();
 	fprintf(stderr, "PortAudio Error: %s\n", Pa_GetErrorText(err));
+	return 1;
 }
